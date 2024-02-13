@@ -1,77 +1,77 @@
 const net = require('net');
+const readline = require("readline");
+const config = require('./config.json');
 
-// https://maku77.github.io/nodejs/io/readline-from-keyboard.html
-/**
- * ユーザーからの入力を受け取り、リクエストオブジェクトを構築してコンソールに出力する非同期関数です。
- * ユーザーはメソッド名、パラメータ、パラメータの型を入力します。
- * 入力された情報はリクエストオブジェクトに格納され、乱数生成関数を使用して一意のIDが割り当てられます。
- */
-
-function readUserInput(question) {
-    const readline = require("readline").createInterface({
+function createReadlineInterface() {
+    return readline.createInterface({
         input: process.stdin,
         output: process.stdout
-    });   
+    });
+}
 
-    return new Promise((resolve, reject) => {
-        readline.question(question, (answer) => {
+function readUserInput(question) {
+    const rl = createReadlineInterface();
+    return new Promise((resolve) => {
+        rl.question(question, (answer) => {
             resolve(answer);
-            readline.close();
+            rl.close();
         });
     });
 }
 
-// https://developer.mozilla.org/ja/docs/Web/JavaScript/Reference/Global_Objects/Math/random
-/**
- * 乱数を生成する関数です。
- * @param {number} min - 生成する乱数の最小値（この値を含む）
- * @param {number} max - 生成する乱数の最大値（この値を含まない）
- * @returns {number} min以上max未満の乱数
- */
-
 function getRandomInt(min, max) {
     min = Math.ceil(min);
     max = Math.floor(max);
-    return Math.floor(Math.random() * (max - min) + min)
+    return Math.floor(Math.random() * (max - min) + min);
 }
 
+async function connectToServer(client, request) {
+    return new Promise((resolve, reject) => {
+        client.connect(config['server_address'], () => {
+            console.log('Client: connected to server');
+            client.write(JSON.stringify(request));
+        });
 
-(async function main() {
-    const config = require('./config.json');
-    const server_address = config['server_address'];
+        client.on('data', (data) => {
+            console.log('Received:', data.toString());
+            client.end();
+        });
+
+        client.on('end', () => {
+            console.log('Client: disconnected from server');
+            resolve();
+        });
+
+        client.on('error', (error) => {
+            console.error('Connection error:', error);
+            reject(error);
+        });
+    });
+}
+
+async function main() {
     const client = new net.Socket();
     const request = {
         "method": "",
         "params": [],
-        "params_types": [],
-        "id": NaN
-    }
+        "param_types": [],
+        "id": getRandomInt(1, 10 ** 10)
+    };
 
     try {
         const method = await readUserInput('Please enter a method --> ');
-        const params = await readUserInput('Please enter params separated by spaces. --> ');
-        const params_type = await readUserInput('Please enter params_type separated by spaces. --> ');
-    
+        const paramsInput = await readUserInput('Please enter params separated by spaces. --> ');
+        const paramTypesInput = await readUserInput('Please enter params_type separated by spaces. --> ');
+        
         request['method'] = method;
-        request['params'].push(...params.split(" "));
-        request['params_types'].push(...params_type.split(" "));
-        request['id'] = getRandomInt(1, 10 ** 10)
+        request['params'] = paramsInput.split(" ");
+        request['param_types'] = paramTypesInput.split(" ");
+        
         console.log(request);
-
-        client.connect(server_address, () => {
-            console.log('Client: connected to server')
-            client.write(JSON.stringify(request));
-        });
-        
-        client.on('data', (data) => {
-            console.log('Received:', data.toString());
-            client.end();
-        })
-        
-        client.on('end', () => {
-            console.log('Client: disconnected from server')
-        })
+        await connectToServer(client, request);
     } catch (error) {
         console.error('An error occurred:', error);
     }
-})();
+}
+
+main();
